@@ -1,39 +1,44 @@
+"""
+states.py — состояния FSM-диалога
+
+Группы состояний соответствуют разделам резюме.
+Каждая группа = один файл в handlers/.
+"""
 from aiogram.fsm.state import State, StatesGroup
 
 
-class ResumeState(StatesGroup):
-    """Состояния диалога создания резюме"""
-    # Базовые данные
+class ResumeStates(StatesGroup):
+    # ── Базовые данные (handlers/resume.py) ──────────────────────────
     FULL_NAME = State()
     EMAIL = State()
     PHONE = State()
     CITY = State()
     POSITION = State()
 
-    # Опыт работы
-    WORK_MENU = State()  # Меню выбора действия
-    WORK_ADD_POSITION = State()  # Ввод должности
-    WORK_ADD_COMPANY = State()  # Ввод компании
-    WORK_ADD_START_DATE = State()  # Дата начала
-    WORK_ADD_END_DATE = State()  # Дата окончания (или "по настоящее время")
-    WORK_ADD_DUTIES = State()  # Обязанности
-    WORK_ADD_ACHIEVEMENTS = State()  # Достижения
+    # ── Опыт работы (handlers/work.py) ───────────────────────────────
+    WORK_MENU = State()
+    WORK_POSITION = State()
+    WORK_COMPANY = State()
+    WORK_START_DATE = State()
+    WORK_END_DATE = State()
+    WORK_DUTIES = State()
+    WORK_ACHIEVEMENTS = State()
 
-    # Образование
+    # ── Образование (handlers/education.py) ──────────────────────────
     EDUCATION_MENU = State()
-    EDUCATION_LEVEL = State()  # Уровень образования
-    EDUCATION_INSTITUTION = State()  # Учебное заведение
-    EDUCATION_FACULTY = State()  # Факультет
-    EDUCATION_SPECIALTY = State()  # Специальность
-    EDUCATION_YEAR = State()  # Год окончания
+    EDUCATION_LEVEL = State()
+    EDUCATION_INSTITUTION = State()
+    EDUCATION_FACULTY = State()
+    EDUCATION_SPECIALTY = State()
+    EDUCATION_YEAR = State()
 
-    # Навыки
+    # ── Навыки (handlers/skills.py) ───────────────────────────────────
     SKILLS_MENU = State()
-    SKILLS_ADD = State()  # Добавление навыков
+    SKILLS_INPUT = State()
 
-    # Фото
+    # ── Фото (handlers/photo.py) ──────────────────────────────────────
     PHOTO_MENU = State()
-    PHOTO_ADD = State()  # Загрузка фото
-    
-    # Завершение
-    IDLE = State()  # Без активного диалога
+    PHOTO_WAITING = State()
+
+    # ── Завершение ────────────────────────────────────────────────────
+    DONE = State()  # Данные собраны, ожидаем генерации

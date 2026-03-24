@@ -1,138 +1,78 @@
-import logging
-from aiogram import Bot, Dispatcher, F
-from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.enums import ParseMode
-from aiogram.client.default import DefaultBotProperties
-from config import TELEGRAM_BOT_TOKEN
+"""
+bot.py — точка входа приложения
 
-# Настройка логирования - вывод в файл и консоль
+Регистрирует все роутеры и запускает polling.
+Добавление нового модуля: import + dp.include_router()
+
+Порядок роутеров важен: более специфичные фильтры — выше.
+"""
+import asyncio
+import logging
+
+from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
+from aiogram.fsm.storage.memory import MemoryStorage
+
+from config import LOG_FILE, LOG_LEVEL, TELEGRAM_BOT_TOKEN
+
+# ─── Логирование ──────────────────────────────────────────────────────────────
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     handlers=[
-        logging.FileHandler("bot.log", encoding="utf-8"),
-        logging.StreamHandler()
-    ]
+        logging.FileHandler(LOG_FILE, encoding="utf-8"),
+        logging.StreamHandler(),
+    ],
 )
 logger = logging.getLogger(__name__)
 
-# Инициализация бота и диспетчера
-# Используем HTML вместо Markdown — меньше проблем с экранированием
-bot = Bot(token=TELEGRAM_BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-dp = Dispatcher(storage=MemoryStorage())
-
-# Подключение обработчиков
+# ─── Импорт роутеров ──────────────────────────────────────────────────────────
+# Порядок: start → resume → work → education → skills → photo → generate
+from handlers.start import router as start_router
 from handlers.resume import router as resume_router
+from handlers.work import router as work_router
+from handlers.education import router as education_router
+from handlers.skills import router as skills_router
 from handlers.photo import router as photo_router
-dp.include_router(resume_router)
-dp.include_router(photo_router)
-
-# Регистрируем бот в pdf_generator для загрузки фото
-from services.pdf_generator import set_bot
-set_bot(bot)
+from handlers.generate import router as generate_router
 
 
-@dp.message(Command("generate"))
-async def cmd_generate(message: Message, state: FSMContext):
-    """Генерация PDF-резюме с AI"""
-    logger.info(f"Запрос на генерацию PDF с AI от пользователя {message.from_user.id}")
-    await generate_pdf(message, state, use_ai=True)
-
-
-@dp.callback_query(F.data == "generate_pdf_ai")
-async def cb_generate_pdf_ai(callback: CallbackQuery, state: FSMContext):
-    """Генерация PDF с AI (callback)"""
-    logger.info(f"Запрос на генерацию PDF с AI от пользователя {callback.from_user.id}")
-    await callback.answer()
-    await generate_pdf(callback.message, state, use_ai=True)
-
-
-@dp.callback_query(F.data == "generate_pdf_simple")
-async def cb_generate_pdf_simple(callback: CallbackQuery, state: FSMContext):
-    """Генерация PDF без AI (callback)"""
-    logger.info(f"Запрос на генерацию PDF без AI от пользователя {callback.from_user.id}")
-    await callback.answer()
-    await generate_pdf(callback.message, state, use_ai=False)
-
-
-async def generate_pdf(message: Message, state: FSMContext, use_ai: bool = True):
-    """Общая функция генерации PDF"""
-    from services.pdf_generator import pdf_generator
-    from aiogram.types import FSInputFile
-    import tempfile
-    import os
-
-    try:
-        # Отправляем сообщение о начале генерации
-        ai_text = " с AI-переформулированием" if use_ai else ""
-        progress_msg = await message.answer(
-            f"⏳ <b>Генерация резюме{ai_text}...</b>\n\n"
-            "Это займёт 10-30 секунд."
-        )
-
-        # Получаем данные
-        state_data = await state.get_data()
-        # Используем chat.id как user_id (он одинаковый для пользователя и бота)
-        user_id = message.chat.id
-        logger.info(f"state_data для PDF: {state_data}")
-        logger.info(f"user_id: {user_id}")
-
-        # Проверяем данные в БД
-        from database import db
-        user_data = db.get_resume(user_id)
-        logger.info(f"user_data из БД: {user_data}")
-
-        # Генерируем PDF
-        if use_ai:
-            pdf_buffer = await pdf_generator.generate(user_id, state_data)
-        else:
-            pdf_buffer = await pdf_generator.generate_simple(user_id, state_data)
-
-        logger.info(f"PDF размер: {len(pdf_buffer.getvalue())} байт")
-
-        # Сохраняем во временный файл
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as f:
-            f.write(pdf_buffer.getvalue())
-            temp_path = f.name
-
-        # Отправляем файл
-        ai_caption = "\n\nAI переформулировал:\n• Должность\n• Обязанности\n• Достижения\n• Навыки" if use_ai else ""
-        await message.answer_document(
-            document=FSInputFile(temp_path),
-            caption=f"🎉 <b>Ваше резюме готово!</b>{ai_caption}"
-        )
-
-        # Удаляем временный файл
-        os.unlink(temp_path)
-        
-        # Удаляем сообщение о прогрессе
-        await progress_msg.delete()
-        
-        logger.info(f"PDF отправлен пользователю {message.from_user.id}")
-        
-    except Exception as e:
-        logger.error(f"Ошибка генерации PDF: {e}")
-        await message.answer(
-            "❌ Произошла ошибка при генерации PDF.\n\n"
-            f"Техническая информация: {e}"
-        )
+def create_dispatcher() -> Dispatcher:
+    """Создать и настроить диспетчер"""
+    dp = Dispatcher(storage=MemoryStorage())
+    dp.include_routers(
+        start_router,
+        resume_router,
+        work_router,
+        education_router,
+        skills_router,
+        photo_router,
+        generate_router,
+    )
+    return dp
 
 
 async def main():
-    """Запуск бота"""
-    logger.info("Бот запущен...")
+    if not TELEGRAM_BOT_TOKEN:
+        logger.critical("TELEGRAM_BOT_TOKEN не задан! Проверьте .env файл.")
+        return
+
+    bot = Bot(
+        token=TELEGRAM_BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
+    dp = create_dispatcher()
+
+    logger.info("Бот запущен")
     try:
-        await dp.start_polling(bot)
+        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     except Exception as e:
-        logger.error(f"Критическая ошибка polling: {e}")
+        logger.critical(f"Критическая ошибка: {e}", exc_info=True)
     finally:
         await bot.session.close()
         logger.info("Бот остановлен")
 
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())
